@@ -7,22 +7,18 @@ reinforcement learning, or constructed directly in a test.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 
 
-class Player(str, Enum):
+class Player(StrEnum):
     """The two players. A holds odd-sized disks, B holds even-sized disks."""
 
     A = "A"
     B = "B"
 
-    @property
-    def opponent(self) -> Player:
-        return Player.B if self is Player.A else Player.A
 
-
-class Pole(str, Enum):
+class Pole(StrEnum):
     """The five poles. `SHARED` is the middle pole, visible to both players."""
 
     P1A = "1a"
@@ -32,7 +28,7 @@ class Pole(str, Enum):
     SHARED = "2"
 
 
-class ActionKind(str, Enum):
+class ActionKind(StrEnum):
     """The three actions a player may take on their turn."""
 
     LIFT = "lift"
@@ -40,7 +36,7 @@ class ActionKind(str, Enum):
     SKIP = "skip"
 
 
-class Outcome(str, Enum):
+class Outcome(StrEnum):
     """Result of a game. `DRAW` covers the turn limit being reached."""
 
     A_WINS = "a_wins"
@@ -112,14 +108,7 @@ class GameState:
         """Return the topmost disk on `pole`, or None if it is empty."""
         stack = self.poles[pole]
         return stack[-1] if stack else None
-
-    def with_poles(self, **changes: tuple[int, ...]) -> GameState:
-        """Return a new state with the named poles replaced."""
-        poles = dict(self.poles)
-        for name, stack in changes.items():
-            poles[Pole[name]] = stack
-        return replace(self, poles=poles)
-
+    
 
 @dataclass(frozen=True, slots=True)
 class Observation:
