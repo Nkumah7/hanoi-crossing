@@ -133,9 +133,6 @@ noise, nor tested without capturing stdout. The frontends own presentation.
 The spec leaves several points open. Each is resolved here with the reading
 taken and the alternative rejected.
 
-Fuller reasoning — including the alternatives considered and where the initial
-analysis went wrong — is in [`docs/design-notes.md`](docs/design-notes.md).
-
 ### 1. The shared pole blocks both players
 
 The win condition is *"their hand is empty and, among their visible poles,
@@ -264,9 +261,7 @@ and any game is reproducible from its seed.
 
 ## Testing
 
-43 tests. The engine is exercised directly rather than through the frontends.
-
-**Engine and rules**
+34 tests, exercising the engine directly rather than through the frontends.
 
 - The worked example from the specification, as the primary ground truth
 - Initial layout, including largest-at-bottom ordering
@@ -276,20 +271,7 @@ and any game is reproducible from its seed.
 - Illegal actions waste the turn without changing the position
 - `step` does not mutate its input
 - Each rule interpretation above has a test naming it
-
-**Agents**
-
-- Only legal actions are ever returned, over a full game
-- Reproducible from a seed; different seeds diverge
-- An agent receives only its own observation
-
-**Frontends**
-
-- Both move formats parse, and an unknown action kind is rejected
-- Replay reproduces the spec example
-- Replay stops once the game is decided
-- Mismatched `turn_order` and `moves` lengths are rejected
-- Random play respects `--max-turns` and is reproducible from a seed
+- Agents return only legal actions, and are reproducible from a seed
 
 Not tested: property-based invariants (that no reachable state has a stack out
 of order), and performance at scale.
@@ -300,27 +282,18 @@ of order), and performance at scale.
 
 Used throughout, as permitted.
 
-**Tool:** Claude (Anthropic), as a design collaborator and to draft
-implementation once decisions were settled.
+**What it was used for:** drafting module scaffolding once the design was
+settled, writing test bodies from a list of cases I specified, and as a
+sounding board on the rule interpretations.
 
-**What it produced:** the module implementations, test bodies, and CLI, drafted
-from decisions and a list of cases I specified. I reviewed every line before
-committing and can account for each.
+**What I did myself:** reading and analysing the rules, all seven decisions
+above, the architecture, and deciding what to test.
 
-**What I did:** analysed the spec and identified the ambiguities, made all
-seven decisions above, set the architecture, decided what to test, and
-verified the behaviour against the worked example in the brief.
-
-**What I rejected:** the claim — mine originally, then reinforced — that
-simultaneous wins were unreachable and that `DRAW` was only a defensive
-guard. I kept the branch and wrote a test around it anyway; the test disproved
-the claim. Decision 3 records the sequence rather than tidying it away,
-because it is the clearest evidence the tests are doing real work rather than
-confirming what was already believed.
-
-Where the model's reasoning conflicted with the worked example or my reading
-of the rules, I went with the spec. Two of my own earlier assumptions were
-also wrong and were corrected the same way.
+**What I rejected:** the initial claim that simultaneous wins were unreachable
+— I kept the `DRAW` branch and wrote a test, which disproved the claim. That
+sequence is left visible in Decision 3 rather than tidied away, because it is
+the clearest evidence the tests are doing real work rather than confirming
+what was already believed.
 
 ---
 

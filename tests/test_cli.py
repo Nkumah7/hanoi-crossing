@@ -9,7 +9,7 @@ import json
 import pytest
 
 from hanoi_crossing.cli import parse_action, run_random, run_replay
-from hanoi_crossing.model import Action, ActionKind, Outcome, Pole
+from hanoi_crossing.model import Action, Outcome, Pole
 
 
 def test_parse_action_string_form():
