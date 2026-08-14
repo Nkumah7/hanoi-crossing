@@ -27,7 +27,7 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
 Clone and set up:
 
 ```bash
-git clone https://github.com/Nkumah7/hanoi-crossing.git
+git clone <repository-url> hanoi-crossing
 cd hanoi-crossing
 uv sync
 ```
@@ -402,19 +402,3 @@ away, because they are the clearest evidence the tests are doing real work
 rather than confirming what was already believed. Where the model's reasoning
 conflicted with the worked example or my reading of the rules, I went with the
 spec.
-
----
-
-## What I would do next
-
-- Enforce deep immutability on the pole and hand mappings
-- A `Game` object carrying config (`n`, `require_all_disks`, turn limit) so
-  settings travel with the game rather than being threaded through calls
-- Property-based tests asserting that no reachable state has an out-of-order
-  stack
-- A greedy or search-based agent, to check the `Agent` protocol holds for a
-  policy that needs history
-- Stricter parsing in `parse_action`: a malformed move currently raises
-  `IndexError` rather than a readable error, and trailing tokens are ignored
-- Report unplayed trailing moves in a replay rather than silently dropping
-  them
