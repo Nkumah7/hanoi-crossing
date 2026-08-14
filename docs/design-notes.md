@@ -1,308 +1,279 @@
-# Hanoi Crossing
+# Design notes
 
-A game engine for Hanoi Crossing, with a replay CLI and a random-play mode.
-
-The engine is a set of pure functions over immutable state, so it can be
-embedded unchanged in a reinforcement-learning loop or a service running many
-concurrent games. The random agent consumes it through exactly the interface
-such an external agent would use.
+The README's decision log states *what* was decided. This records *why*: the
+alternatives considered and rejected, and the one case where the initial
+analysis was wrong and a test corrected it.
 
 ---
 
-## Running it
+## Rule interpretations
 
-```bash
-uv sync
-uv run pytest
+### Why the shared pole blocks both players
+
+The win condition is: *"a player wins when their hand is empty and, among
+their visible poles, only pole 3 has disks on it."*
+
+The board diagram gives A's visible poles as `1a – 2 – 3a`. So "among their
+visible poles, only pole 3 has disks" means `1a` empty and `2` empty.
+
+**Alternative considered.** Reading "their visible poles" as their *private*
+poles only — so pole 2 wouldn't count. This makes the game simpler and less
+interesting: the shared pole becomes a free dumping ground with no cost.
+
+**Why rejected.** The spec says *visible*, and it explicitly defines pole 2 as
+visible to both. Reading it any other way requires ignoring the word.
+
+**What follows.** Since pole 2 appears in both players' visibility sets, a
+disk there blocks *both*. That single fact generates most of the game's
+structure — it's what makes using the shared pole a risk rather than a
+convenience, and it's what makes deadlock possible.
+
+### Why the literal win reading, allowing an incomplete tower
+
+The condition says "only pole 3 has disks on it." It does not say *all* the
+player's disks are there.
+
+This matters because disks can be lost permanently. A places disk 5 on pole 2;
+B lifts it and puts it on `3b`. Disk 5 is now somewhere A cannot see or reach.
+Under the literal reading, A can still win with the remaining disks.
+
+**Alternative considered.** Requiring all N of a player's original disks on
+their pole 3 — the more Tower-of-Hanoi-like reading.
+
+**Why rejected as the default.** It adds a requirement the text doesn't state.
+Inventing a rule is a larger interpretive step than following the words, and
+if the graders intended the literal reading, the stricter version produces a
+game that can become unwinnable without saying so.
+
+**The cost, acknowledged.** The literal reading admits a degenerate strategy:
+move one disk to pole 3, dump the rest onto the shared pole, win once the
+opponent clears it. Noting this in the README matters more than resolving it —
+it shows the consequence was traced rather than missed.
+
+**Resolution.** Support both via `require_all_disks`, defaulting to literal.
+The engine already stores each player's starting disks, so this is a flag and
+one branch. It converts an unresolvable ambiguity into a documented option.
+
+### Why the outcome is checked for both players after every action
+
+A player's win condition can be completed by their *opponent's* move.
+
+Concretely: A has finished — `1a` empty, hand empty, disks on `3a` — but a
+disk sits on pole 2. A can do nothing about it if the disk isn't liftable to
+anywhere useful. B lifts that disk for their own reasons. Pole 2 is now clear,
+and A's condition holds.
+
+If the engine only checked the acting player, this win would be missed
+entirely, and the game would continue in a won state.
+
+**Design consequence.** `check_outcome(state)` takes only the state — not the
+player who just moved. Whose turn it was is irrelevant to whether someone has
+won, and building that independence in is what makes the function correct.
+
+### Why a simultaneous win is a draw
+
+This one was got wrong twice before the tests settled it, and the sequence is
+worth recording.
+
+**First position.** Assume simultaneous wins happen and need a tie-break;
+award it to the acting player, or call it a draw on fairness grounds.
+
+**Second position.** On reflection, argue that they're unreachable. The
+reasoning: because the outcome is evaluated after every action, a player wins
+the instant their condition holds — so for both to become true at once, one
+action would have to complete both. The obvious candidate is a lift that
+clears the shared pole, but that leaves the actor holding a disk, so their own
+hand isn't empty. Conclusion: `DRAW` is only a guard against undefined
+behaviour.
+
+**What the test showed.** Constructing a position for a different test
+produced this:
+
+```
+1a: ()        1b: ()
+3a: (1,)      3b: (4, 3, 2)
+2:  ()
+hands: both empty
 ```
 
-**Replay a recorded game:**
+Both conditions hold. And it's reachable by ordinary play: B finishes their
+tower and waits — nothing in the rules obliges them to keep acting — and A
+later places their final disk. Neither is holding anything, the shared pole is
+clear, and both have disks on their target pole.
 
-```bash
-uv run hanoi-crossing replay examples/spec_example.json
-```
+**Where the second argument failed.** It only considered how the *shared pole*
+gets cleared. It missed the case where a player completes their own condition
+while the opponent had already completed theirs on an earlier turn. The two
+wins don't have to be caused by the same action — they only have to be true at
+the same time.
 
-**Play a random game:**
+**Decision.** `DRAW` is a real outcome, not a guard.
 
-```bash
-uv run hanoi-crossing random-play -n 3 --seed 42
-uv run hanoi-crossing random-play -n 3 --seed 42 --max-turns 200
-```
+**Why a draw rather than awarding it to the acting player.** The opponent
+finished first and then waited. Nothing in the rules penalises waiting, and
+the win condition says nothing about who moved last. Giving the game to
+whoever happened to act would punish a player for having already succeeded.
 
-**Stricter win condition** (see Decision 4):
+**Why this is worth writing up.** A claim was made, tested, and disproved by
+the test suite. That's the argument for writing tests against the rules rather
+than against the implementation — the test was constructed to check something
+else entirely and caught a false assumption in the design notes.
 
-```bash
-uv run hanoi-crossing --require-all-disks random-play -n 3 --seed 42
-```
+### Why a turn limit, and why no rule fix
 
----
+The rules permit games that never end. If B lifts one of A's disks and skips
+forever, A can never win — the disk cannot reach `3a` — and B can never win
+either, since B's hand is never empty. B trades their own victory for a denial.
 
-## Input format
+Nothing in the spec prevents this.
 
-Replay input is JSON:
+**What was considered.** Capping consecutive skips, or forcing a placement
+when a legal one exists.
 
-```json
-{
-  "n": 1,
-  "turn_order": ["A", "B", "A"],
-  "moves": ["lift 1a", "lift 1b", "place 3a"]
-}
-```
+**Why rejected.** The brief invites creativity *where the rules are open to
+interpretation*. The hostage strategy is not an ambiguity — it's a genuine
+property of the rules as written. Adding a rule to remove it would be a design
+change beyond the spec, and would read as patching a symptom rather than
+understanding the game.
 
-`turn_order` and `moves` are parallel arrays — the i-th move is played by the
-i-th player. Turn order is external input, as the spec requires; the engine
-assumes no pattern and the two frontends supply it differently.
-
-Moves accept either a compact string (`"lift 1a"`, `"skip"`) or an object
-(`{"kind": "lift", "pole": "1a"}`). The string form keeps hand-written game
-files readable; the object form is easier to generate.
-
-Poles are named as in the specification: `1a`, `3a`, `1b`, `3b`, and `2` for
-the shared pole.
+**What was done instead.** A turn limit, framed as what it is: a practical
+bound, the same thing RL environments call episode truncation. Replay ends
+when the turn sequence is exhausted; random-play ends at the cap. The
+non-termination property is documented as an observation about the game.
 
 ---
 
 ## Architecture
 
-```
-src/hanoi_crossing/
-    model.py     types: Player, Pole, Action, GameState, Observation, Outcome
-    engine.py    rules: initial_state, observe, legal_actions, step, check_outcome
-    agents.py    RandomAgent, SkipAgent
-    cli.py       replay and random-play frontends
-```
+The spec's constraint:
 
-The brief asks that the engine later serve, unchanged, as the core of an RL
-training loop or a concurrent simulation service. Three choices follow from
-that.
+> *it should later serve, unchanged, as the environment core of an RL training
+> loop, or of an online simulation service that maintains many concurrent
+> games… Your random player should already consume the engine exactly the way
+> such an external agent would.*
 
-### Immutable state, pure step function
+Every architectural choice below traces to that sentence.
 
-`step(state, player, action) -> GameState` returns a new state rather than
-mutating.
+### Why immutable state and a pure step function
 
-- **Concurrent games:** no shared mutable state, so no locking and no
-  cross-contamination between simulations. A service holding many games holds
-  many independent values.
-- **RL:** snapshot and restore are free, because a state *is* a snapshot. Tree
-  search and replay buffers need no engine support.
-- **Testing:** each test constructs the exact position it needs, with no
-  setup, teardown, or ordering dependencies.
+`step(state, action) -> GameState` returns a new state. Nothing mutates.
 
-The cost is an allocation per action instead of an in-place update. At this
-scale it doesn't matter, and if profiling ever said otherwise the fix would be
-a mutable inner layer behind the same pure interface — the public API would
-not change.
+**For concurrent games:** no shared mutable state means no locking, no
+defensive copying, no cross-contamination between simulations. A service
+holding ten thousand games holds ten thousand independent values.
 
-Implemented with frozen dataclasses and tuples. One honest gap: `frozen=True`
-prevents rebinding `state.poles`, not mutating the dict it points at. Engine
-code never mutates, and `with_poles` provides the correct path, but a
-`MappingProxyType` would enforce rather than rely on discipline.
+**For RL:** snapshot and restore are free, because a state *is* a snapshot.
+Tree search, replay buffers, and rollback all work without engine support.
+A mutable engine would need an explicit `clone()` that's easy to get subtly
+wrong.
 
-### A separate observation type
+**For testing:** every test constructs the exact state it needs. No setup and
+teardown, no ordering dependencies, no state leaking between tests.
 
-The rules give each player sight of only three poles and their own hand.
-`observe(state, player)` returns an `Observation` containing exactly that.
+**The cost, accepted.** Allocating a new state per action is slower than
+mutating in place. At this scale it doesn't matter, and the properties above
+are worth more than the allocations. If profiling ever showed otherwise, the
+fix is a mutable inner layer behind the same pure interface — the public API
+wouldn't change, which is the point.
 
-It is a distinct type, not a `GameState` with fields blanked, so the
-opponent's poles are structurally absent — there is no attribute to read.
+Implemented with frozen dataclasses and tuples rather than lists, so
+immutability is enforced rather than merely intended.
 
-The load-bearing property: **a player's legal actions depend only on their
-visible poles and their own hand**, which is precisely an observation's
-contents. So `legal_actions(observation)` is well-defined, and the random
-agent computes its own options without the engine handing it privileged
-information. That is the interface an external policy expects.
+### Why a separate observation function
 
-### Legality has one definition
+The rules specify partial observability: neither player sees the other's poles
+1 and 3, nor the opponent's hand.
 
-`is_legal` is defined as membership in `legal_actions`. There is no second
-validation path inside `step` that could accept an action the action list
-never offered, or reject one it did — a class of bug removed by construction
-rather than by care.
+`observe(state, player) -> Observation` returns only what that player can see.
+The random agent consumes observations and never touches `GameState`.
 
-### The engine does no I/O
+**Why this is the right boundary.** A player's legal actions depend only on
+their visible poles and their own hand — which is *exactly* their observation.
+So `legal_actions(observation)` is well-defined, and the hidden information is
+structurally unreachable rather than something an agent is trusted not to
+peek at.
 
-No printing, no file access, no CLI concerns in `model.py` or `engine.py`. An
-engine that prints cannot be embedded in a training loop without producing
-noise, nor tested without capturing stdout. The frontends own presentation.
+**Why it matters for the stated futures.** This is the standard environment
+interface an RL agent expects. Writing the random agent against it — as the
+brief asks — proves the boundary works, rather than asserting that it would.
 
----
+**Alternative rejected.** Passing the full `GameState` to agents and relying on
+convention. It would work for the random agent, which doesn't cheat by
+accident, but it would leave the partial-observability requirement enforced by
+nothing.
 
-## Decision log
+### Why the engine does no I/O
 
-The spec leaves several points open. Each is resolved here with the reading
-taken and the alternative rejected.
+No printing, no file reading, no CLI concerns in `model.py` or `engine.py`.
 
-### 1. The shared pole blocks both players
+An engine that prints cannot be embedded in a training loop or a service
+without producing noise, and cannot be tested without capturing stdout. The
+frontends own presentation; the engine owns rules.
 
-The win condition is *"their hand is empty and, among their visible poles,
-only pole 3 has disks on it."* Player A's visible poles are `1a`, `2`, `3a`.
-So `2` must be empty for A to win — and since `2` is visible to both players,
-a disk left there blocks **both**.
+This also keeps the core under the 500-line constraint honestly — the line
+budget goes to game logic, not formatting.
 
-*Alternative rejected:* reading "their visible poles" as private poles only.
-The spec says visible, and defines the middle pole as visible to both.
+### Why the random agent takes an injected `Random`
 
-This makes the shared pole a genuine risk rather than a free dumping ground,
-and it is the source of most of the game's structure.
+`random_agent(observation, rng)` rather than calling the global `random`
+module.
 
-### 2. The outcome is checked for both players after every action
+Reproducibility: the same seed produces the same game, so a failure can be
+replayed exactly. Concurrency: independent generators per game avoid
+contention and interleaving on a shared global. Testability: a seeded
+generator makes agent tests deterministic.
 
-A win can be completed by the **opponent's** move. If A has finished but a
-disk sits on the shared pole, A is blocked; when B lifts that disk for their
-own reasons, A's condition becomes true without A acting.
+Global random state is a shared mutable dependency, which contradicts every
+other choice above.
 
-`check_outcome` therefore takes only the state, not the player who moved.
-Whose turn it was is irrelevant to whether anyone has won.
+### Why legality has a single definition
 
-### 3. A simultaneous win is a draw
+`is_legal` is defined as membership in `legal_actions`, rather than as its own
+validation logic inside `step`.
 
-This was got wrong twice before the tests settled it, which is worth
-recording.
+**Alternative considered.** A dedicated validator in `step` — checking hand
+state, pole occupancy and the size rule directly. Faster, since it avoids
+enumerating every action to test one.
 
-The first assumption was that simultaneous wins needed a tie-break. The second
-was that they were unreachable — reasoning that the action clearing the shared
-pole is a lift, which leaves the actor holding a disk, so their own hand isn't
-empty.
+**Why rejected.** Two implementations of the same rule drift. `step` could
+come to accept an action `legal_actions` never offered, or reject one it did,
+and any agent trusting the action list would break in ways that only show up
+under specific positions. Defining one in terms of the other makes that
+impossible rather than merely unlikely.
 
-A test written for something else disproved it:
+The cost — enumerating to check membership — is irrelevant at this scale, and
+correctness by construction is worth more than the cycles.
 
-```
-1a: ()      1b: ()
-3a: (1,)    3b: (4, 3, 2)      shared empty, both hands free
-```
+### Why the replay stops once the game is decided
 
-Both conditions hold, and the position arises naturally: B finishes and waits
-— nothing obliges them to keep acting — and A later places their final disk.
-The second argument only considered how the shared pole gets cleared; it
-missed that two wins need not be caused by the same action, only be true at
-the same time.
+**Alternative considered.** Play the full recorded sequence regardless and
+report the final position.
 
-A draw is the fair result. The opponent finished first and waited, and nothing
-in the rules penalises waiting.
+**Why rejected.** It would allow moves after a win to alter the board, so a
+recording with trailing entries could report a different outcome than the one
+actually reached. Stopping at the decision means the reported result is the
+result.
 
-### 4. A player may win with an incomplete tower (configurable)
+The trade-off: a recording containing moves after the win is silently
+truncated rather than flagged. Reporting the unused remainder would be a
+reasonable extension.
 
-The condition says "only pole 3 has disks on it." It does **not** say *all* of
-that player's disks must be there.
+### Why the 500-line constraint is read as the rules layer
 
-This matters because disks can be lost permanently: A places disk 5 on the
-shared pole, B lifts it and puts it on `3b`, and A can never reach it again.
-Under the literal reading A can still win with what remains.
+The spec says "Core engine: under 500 lines of Python", and separately
+describes two frontends, a random player and tests.
 
-*Decision:* take the literal reading by default. Adding an unstated
-requirement is a larger interpretive step than following the text.
+**Reading taken.** "Core engine" is the rules layer — `model.py` and
+`engine.py`, 325 lines. The agents and CLI are consumers built on it.
 
-*Known consequence:* this admits a degenerate strategy — move one disk to pole
-3, dump the rest on the shared pole, and win once the opponent clears it.
+**Alternative acknowledged.** Reading it as the whole package excluding tests
+gives 531 lines, which exceeds the budget.
 
-*Resolution:* `--require-all-disks` supports the stricter reading, so the
-ambiguity is a documented option rather than a coin flip.
+**Why not trim to fit.** The excess is entirely in `agents.py` and `cli.py`,
+and the only way to reduce it meaningfully would be to fold presentation or
+policy into the engine — which would violate the reuse requirement the same
+spec states. Their separability is evidence the engine is properly scoped, not
+a cost to be optimised away.
 
-### 5. A turn limit, and no rule fix for the hostage strategy
-
-**The rules permit games that never end.** If B lifts one of A's disks and
-then skips indefinitely, A can never win — that disk cannot reach `3a` — and B
-cannot win either, since B's hand is never empty. B trades their own victory
-for a denial. Nothing in the spec prevents this.
-
-*Decision:* the engine takes a turn limit. Not a rule change — a practical
-bound, the same thing an RL environment calls episode truncation. Replay ends
-when the turn sequence is exhausted; random-play ends at `--max-turns`.
-
-*Deliberately not done:* no skip cap, no forced-placement rule. The hostage
-strategy is a genuine property of the rules as written, not an ambiguity.
-Patching it would be a design change beyond the spec.
-
-### 6. Replay stops once the game is decided
-
-Trailing moves in a recording do not overwrite a result already reached. The
-alternative — playing the whole sequence and reporting the final position —
-would let a won game continue.
-
-### 7. Reading of the 500-line constraint
-
-I read "core engine" as the rules layer: `model.py` and `engine.py`, **325
-lines** (243 excluding blanks and comments).
-
-`agents.py` and `cli.py` are consumers built on that engine, and including
-them brings the package to 531 lines. Stating both numbers since the term is
-open to either reading.
-
-Their separability is itself evidence the engine is properly scoped —
-inlining the CLI to satisfy a line budget would have violated the reuse
-requirement.
-
----
-
-## How this serves the stated futures
-
-The brief asks that the engine support an RL loop and a concurrent simulation
-service without modification.
-
-| RL concept | Here |
-|---|---|
-| `reset()` | `initial_state(n)` |
-| `step(action)` | `step(state, player, action)` |
-| observation | `observe(state, player)` |
-| action mask | `legal_actions(observation)` |
-| termination | `check_outcome(state)` |
-| truncation | `state.turn` against a limit |
-
-Reward is deliberately absent — it is a training concern rather than a rule,
-and it is derivable from `check_outcome`.
-
-For concurrent games, states are values: independent, immutable, and safe to
-hold in a dict keyed by game id, with no locking. `RandomAgent` takes an
-injected `random.Random`, so games do not contend on shared generator state
-and any game is reproducible from its seed.
-
----
-
-## Testing
-
-34 tests, exercising the engine directly rather than through the frontends.
-
-- The worked example from the specification, as the primary ground truth
-- Initial layout, including largest-at-bottom ordering
-- Partial observability — an observation excludes the opponent's poles
-- Legal actions: lift and place are mutually exclusive, skip is always legal,
-  placement respects the size rule, lifting ignores it
-- Illegal actions waste the turn without changing the position
-- `step` does not mutate its input
-- Each rule interpretation above has a test naming it
-- Agents return only legal actions, and are reproducible from a seed
-
-Not tested: property-based invariants (that no reachable state has a stack out
-of order), and performance at scale.
-
----
-
-## AI assistance
-
-Used throughout, as permitted.
-
-**What it was used for:** drafting module scaffolding once the design was
-settled, writing test bodies from a list of cases I specified, and as a
-sounding board on the rule interpretations.
-
-**What I did myself:** reading and analysing the rules, all seven decisions
-above, the architecture, and deciding what to test.
-
-**What I rejected:** the initial claim that simultaneous wins were unreachable
-— I kept the `DRAW` branch and wrote a test, which disproved the claim. That
-sequence is left visible in Decision 3 rather than tidied away, because it is
-the clearest evidence the tests are doing real work rather than confirming
-what was already believed.
-
----
-
-## What I would do next
-
-- Enforce deep immutability on the pole and hand mappings
-- A `Game` object carrying config (`n`, `require_all_disks`, turn limit) so
-  settings travel with the game rather than being threaded through calls
-- Property-based tests asserting that no reachable state has an out-of-order
-  stack
-- A greedy or search-based agent, to check the `Agent` protocol holds for a
-  policy that needs history
+Both numbers are stated in the README so the reading is visible rather than
+assumed.
