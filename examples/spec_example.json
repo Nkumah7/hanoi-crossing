@@ -1,0 +1,5 @@
+{
+  "n": 1,
+  "turn_order": ["A", "B", "A"],
+  "moves": ["lift 1a", "lift 1b", "place 3a"]
+}

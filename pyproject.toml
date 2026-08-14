@@ -27,3 +27,6 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[project.scripts]
+hanoi-crossing = "hanoi_crossing.cli:main"
