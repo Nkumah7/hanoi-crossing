@@ -254,3 +254,20 @@ def test_incomplete_tower_does_not_win_when_all_disks_required():
 def test_complete_tower_wins_when_all_disks_required():
     state = _state(p3a=(3, 1))
     assert check_outcome(state, require_all_disks=True) is Outcome.A_WINS
+
+
+# --- hostage strategy (Decision 5) -----------------------------------------
+
+
+def test_hostage_strategy_prevents_both_players_winning():
+    state = _state(p1a=(3,), shared=(1,), p1b=(4, 2))
+    state = step(state, Player.B, Action.lift(Pole.SHARED))
+    for _ in range(50):
+        state = step(state, Player.B, Action.skip())
+    assert check_outcome(state) is Outcome.IN_PROGRESS
+
+
+def test_hostage_is_decisive_when_all_disks_required():
+    state = _state(p3a=(3,), shared=(1,), p1b=(4, 2))
+    state = step(state, Player.B, Action.lift(Pole.SHARED))
+    assert check_outcome(state, require_all_disks=True) is Outcome.IN_PROGRESS

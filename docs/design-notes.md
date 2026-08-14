@@ -141,6 +141,37 @@ bound, the same thing RL environments call episode truncation. Replay ends
 when the turn sequence is exhausted; random-play ends at the cap. The
 non-termination property is documented as an observation about the game.
 
+**A qualification the tests produced, and it corrects the analysis above.**
+
+The first version of the hostage test asserted a deadlock and instead reported
+`A_WINS`. The position was:
+
+```
+1a: ()        3a: (3,)        shared: (1,)        B lifts disk 1
+```
+
+B takes A's disk 1 hostage — and in doing so clears the shared pole, which was
+the only thing blocking A. A already had disk 3 on their target, and under the
+literal reading (Decision 4) an incomplete tower is enough. The hostage-taker
+handed the victim the win.
+
+So the strategy is narrower than the analysis assumed. It only blocks the
+victim when:
+
+- the hostage disk is their *only* route to a non-empty pole 3, or
+- `require_all_disks` is in force, where every disk must come home
+
+Both cases now have tests. `test_hostage_strategy_prevents_both_players_winning`
+uses a position where A still has a disk on `1a`, so A cannot win regardless.
+`test_hostage_is_decisive_when_all_disks_required` shows the same position that
+gave A the win under the literal reading remaining unresolved under the
+stricter one.
+
+**Why this is worth recording.** The non-termination claim was reasoned from
+the rules and was correct in outline, but the analysis of *when* it applies was
+wrong, and only writing the test exposed it. Two of the seven decisions have
+now been corrected this way.
+
 ---
 
 ## Architecture

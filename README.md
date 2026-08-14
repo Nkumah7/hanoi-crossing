@@ -128,6 +128,15 @@ noise, nor tested without capturing stdout. The frontends own presentation.
 
 ---
 
+## Time spent
+
+Roughly two hours on implementation. Additional time went into analysing the
+specification for ambiguities and writing up the decisions — the seven
+interpretive questions in the log below took longer to settle than the code
+took to write, and a final review pass followed.
+
+---
+
 ## Decision log
 
 The spec leaves several points open. Each is resolved here with the reading
@@ -205,16 +214,32 @@ ambiguity is a documented option rather than a coin flip.
 ### 5. A turn limit, and no rule fix for the hostage strategy
 
 **The rules permit games that never end.** If B lifts one of A's disks and
-then skips indefinitely, A can never win — that disk cannot reach `3a` — and B
-cannot win either, since B's hand is never empty. B trades their own victory
-for a denial. Nothing in the spec prevents this.
+then skips indefinitely, that disk can never reach `3a` — and B cannot win
+either, since B's hand is never empty. B trades their own victory for a
+denial. Nothing in the spec prevents this.
 
-*Decision:* the engine takes a turn limit. Not a rule change — a practical
+**A qualification the tests produced.** The strategy is weaker than it first
+appears under the default win reading. Because a player may win with an
+incomplete tower (Decision 4), taking one disk hostage only blocks the victim
+if it is their *only* route to a non-empty pole 3. Worse for the hostage-taker:
+lifting a disk *off* the shared pole clears the very thing that was blocking
+the opponent, so the move can hand them the win outright.
+
+The strategy is decisive only when the victim has nothing else on their target
+pole, or under `--require-all-disks`, where every disk must come home. Both
+cases have tests
+(`test_hostage_strategy_prevents_both_players_winning`,
+`test_hostage_is_decisive_when_all_disks_required`).
+
+This was found by writing the test, not by reading the rules — the first
+version asserted a deadlock and instead reported `A_WINS`.
+
+**Decision:** the engine takes a turn limit. Not a rule change — a practical
 bound, the same thing an RL environment calls episode truncation. Replay ends
 when the turn sequence is exhausted; random-play ends at `--max-turns`.
 
-*Deliberately not done:* no skip cap, no forced-placement rule. The hostage
-strategy is a genuine property of the rules as written, not an ambiguity.
+**Deliberately not done:** no skip cap, no forced-placement rule. Non-
+termination is a genuine property of the rules as written, not an ambiguity.
 Patching it would be a design change beyond the spec.
 
 ### 6. Replay stops once the game is decided
@@ -264,7 +289,7 @@ and any game is reproducible from its seed.
 
 ## Testing
 
-43 tests. The engine is exercised directly rather than through the frontends.
+45 tests. The engine is exercised directly rather than through the frontends.
 
 **Engine and rules**
 
@@ -276,6 +301,8 @@ and any game is reproducible from its seed.
 - Illegal actions waste the turn without changing the position
 - `step` does not mutate its input
 - Each rule interpretation above has a test naming it
+- The hostage deadlock, and the case where it backfires under the literal
+  win reading
 
 **Agents**
 
@@ -311,16 +338,25 @@ committing and can account for each.
 seven decisions above, set the architecture, decided what to test, and
 verified the behaviour against the worked example in the brief.
 
-**What I rejected:** the claim — mine originally, then reinforced — that
-simultaneous wins were unreachable and that `DRAW` was only a defensive
-guard. I kept the branch and wrote a test around it anyway; the test disproved
-the claim. Decision 3 records the sequence rather than tidying it away,
-because it is the clearest evidence the tests are doing real work rather than
-confirming what was already believed.
+**What I rejected, and what the review caught.** Three things, all found by
+testing or reviewing rather than by reading:
 
-Where the model's reasoning conflicted with the worked example or my reading
-of the rules, I went with the spec. Two of my own earlier assumptions were
-also wrong and were corrected the same way.
+- The claim that simultaneous wins were unreachable, and that `DRAW` was only
+  a defensive guard. I kept the branch and wrote a test around it; the test
+  disproved the claim (Decision 3).
+- The analysis of when the hostage strategy actually blocks a player. The
+  first test asserted a deadlock and reported `A_WINS` instead — taking a disk
+  hostage clears the shared pole, which can hand the victim the win
+  (Decision 5).
+- Two speculative helpers (`Player.opponent`, `GameState.with_poles`) that
+  nothing called, and an outdated enum idiom that ruff flagged. All removed on
+  a review pass.
+
+Decision 3 and Decision 5 record the corrections rather than tidying them
+away, because they are the clearest evidence the tests are doing real work
+rather than confirming what was already believed. Where the model's reasoning
+conflicted with the worked example or my reading of the rules, I went with the
+spec.
 
 ---
 
