@@ -1,210 +1,29 @@
-# Hanoi Crossing — design decisions
-
-Notes from reading the spec, before implementation.
-
----
-
-## Understanding the board
-
-**Five poles, not six.** Each player has three, but the middle one is the same
-physical pole.
-
-| Pole | Owner | Visible to |
-|---|---|---|
-| `1a` | A | A only |
-| `3a` | A | A only |
-| `1b` | B | B only |
-| `3b` | B | B only |
-| `2` | shared | both |
-
-**Starting position.** All disks on pole 1, largest at bottom. A has the odd
-sizes (1, 3, 5…), B has the even sizes (2, 4, 6…). For N=2: `1a = [3, 1]`,
-`1b = [4, 2]`, everything else empty, both hands empty.
-
-**Partial observability.** A sees `1a`, `2`, `3a` and A's own hand. Nothing
-else — not B's poles, not B's hand.
-
----
-
-## The action rules
-
-| Action | Precondition | Effect |
-|---|---|---|
-| Lift | hand empty | take the **top** disk from a visible pole |
-| Place | hand full | put held disk on a visible pole |
-| Skip | none | nothing |
-
-Two rules people conflate:
-
-- **Lift takes the top disk. No size check.** Size is irrelevant to lifting.
-- **Place needs the target empty, or its top disk strictly larger.**
-
-Never both lift and place available on the same turn — hand is either empty or
-full.
-
-An illegal action wastes the turn without changing state.
-
----
-
-## Disks are not owned once shared
-
-Either player may lift any top disk from pole 2. So A can place an odd disk on
-the shared pole and B can take it — and put it on `3b`, where A can never
-reach it again.
-
-This makes using the shared pole a genuine risk, and it's the strategic core
-of the game.
-
----
-
-## Decision 1 — the shared pole blocks both players
-
-**The ambiguity.** The win condition reads: *"a player wins when their hand is
-empty and, among their visible poles, only pole 3 has disks on it."*
-
-A's visible poles are `1a`, `2`, `3a`. So "only pole 3 has disks" requires
-`1a` empty **and `2` empty**.
-
-**Decision.** Read it literally: pole 2 must be clear for either player to
-win.
-
-**Consequence.** Pole 2 blocks *both* players, since it's in both visibility
-sets. A disk parked there deadlocks the game until someone moves it.
-
-**Alternative rejected.** Reading "their visible poles" as only their private
-poles would make pole 2 irrelevant to winning — but the text says visible, and
-pole 2 is visible.
-
----
-
-## Decision 2 — win check runs for both players after every action
-
-**Why.** A player's win condition can become true because of the *opponent's*
-move. If B lifts the last disk off pole 2, and A already has `1a` empty, hand
-empty, and disks on `3a`, then A has won — without A acting.
-
-Checking only the acting player would miss this.
-
----
-
-## Decision 3 — both-win is a defensive guard, not an expected outcome
-
-**Initial assumption (wrong).** That both win conditions could become true on
-the same action, needing a tie-break.
-
-**On checking.** Because the outcome is evaluated after *every* action, a
-player wins the instant their condition holds. For both to become true
-simultaneously, a single action would have to complete both — and the clearing
-action always leaves the actor holding a disk (a lift) or is a place that only
-affects the actor's own hand.
-
-Worked through: pole 2 holds the last blocker, both players otherwise ready.
-B lifts it. Pole 2 is now empty, so **A wins** — but B is holding the disk, so
-B's hand isn't empty and B does not. Not simultaneous.
-
-**Decision.** `check_outcome` returns `DRAW` if both conditions somehow hold,
-as a guard against undefined behaviour — but this is believed unreachable, and
-the README says so rather than presenting it as a game rule.
-
-`DRAW` is still needed regardless, for the turn limit (Decision 5).
-
----
-
-## Decision 4 — literal win reading (a player may win with an incomplete tower)
-
-**The ambiguity.** The condition says "only pole 3 has disks on it." It does
-**not** say *all* of that player's disks must be there.
-
-So if A loses disk 5 to B (via the shared pole, onto `3b`), A can still win
-with `1a` empty, `2` empty, hand empty, and *any* disks on `3a`.
-
-**Decision.** Take the literal reading. Inventing an unstated requirement is
-the riskier move.
-
-**Known consequence.** This admits a degenerate strategy: move one disk to
-pole 3, dump the rest on the shared pole, and win once the opponent clears it.
-
-**If time permits:** make it configurable — `require_all_disks: bool`,
-defaulting to the literal reading. Roughly five lines, since the engine stores
-each player's starting disks anyway. Documents the ambiguity as a supported
-option rather than a coin flip.
-
----
-
-## Decision 5 — turn limit, and the non-termination analysis
-
-**The rules permit a game that never ends.** If B lifts one of A's disks and
-then skips forever:
-
-- A can never win — that disk can never reach `3a`
-- B can never win — B's hand isn't empty, so B fails their own condition
-
-Mutual deadlock, sacrificing B's win to deny A's. There is nothing in the
-rules preventing it.
-
-The milder version — parking a disk on pole 2 and refusing to move it — blocks
-both players, since pole 2 is visible to both.
-
-**Decision.** The engine takes a turn limit. Not a rule change — a practical
-bound, equivalent to episode truncation in an RL environment. Replay mode ends
-when the turn-order sequence is exhausted; random-play mode ends at the cap.
-
-**Deliberately not doing.** No rule fix (no skip-cap, no forced-placement
-rule). The hostage strategy is a genuine property of the rules as written, not
-an ambiguity — patching it would be a design change beyond the spec. Better to
-document that it exists.
-
----
-
-## Decision 6 — outcome is four-valued
-
-- A wins
-- B wins
-- Draw (simultaneous win, or turn limit reached)
-- In progress
-
----
-
-## Architecture
-
-Driven by this line in the spec:
-
-> *it should later serve, unchanged, as the environment core of an RL training
-> loop, or of an online simulation service that maintains many concurrent
-> games… Your random player should already consume the engine exactly the way
-> such an external agent would.*
-
-**Immutable state, pure step function.** `step(state, action) -> GameState`
-returns a new state rather than mutating. Frozen dataclasses, tuples not
-lists.
-
-- Concurrent games: no shared mutable state, trivially safe
-- RL: snapshot and restore are free; a state *is* a snapshot
-- Testing: no setup/teardown, no ordering dependencies
-
-**Observation function.** `observe(state, player) -> Observation` returns only
-what that player can see. The random agent consumes observations, never the
-full state — exactly as an external agent would.
-
-**The key property:** a player's legal actions depend only on their visible
-poles and their own hand — which is precisely their observation. So
-`legal_actions(observation)` is well-defined, and partial observability is
-structural rather than a convention the agent is trusted to respect.
-
-**Engine does no I/O.** No printing, no file reading, no CLI concerns. The
-frontends do that.
-
----
-
-## Module layout
-
-```
-src/hanoi_crossing/
-    model.py     Player, Action, GameState, Observation, Outcome
-    engine.py    initial_state, observe, legal_actions, step, check_outcome
-    agents.py    random agent (injected Random for reproducibility)
-    cli.py       replay + random-play frontends
-tests/
-```
-
-Core engine (`model.py` + `engine.py`) stays under 500 lines.
+[project]
+name = "hanoi-crossing"
+version = "0.1.0"
+description = "Hanoi Crossing Game"
+readme = "README.md"
+authors = [
+    { name = "Joseph Nkumah", email = "josephnkumah97@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.11.14,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.3",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
