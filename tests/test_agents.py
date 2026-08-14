@@ -7,17 +7,30 @@ ever picks legal ones and only ever sees its own observation.
 import random
 
 from hanoi_crossing.agents import RandomAgent, SkipAgent
+from hanoi_crossing.cli import run_random
 from hanoi_crossing.engine import initial_state, legal_actions, observe, step
-from hanoi_crossing.model import Action, ActionKind, Player
+from hanoi_crossing.model import Action, ActionKind, Outcome, Player, Pole
+
+
+def _play(seed: int, turns: int = 40) -> list[str]:
+    """Play a fixed number of turns and return the action sequence."""
+    agent = RandomAgent(random.Random(seed))
+    state = initial_state(n=2)
+    actions = []
+    for i in range(turns):
+        player = Player.A if i % 2 == 0 else Player.B
+        action = agent(observe(state, player))
+        actions.append(str(action))
+        state = step(state, player, action)
+    return actions
 
 
 def test_random_agent_only_returns_legal_actions():
     agent = RandomAgent(random.Random(0))
     state = initial_state(n=3)
 
-    for turn, player in enumerate(
-        [Player.A, Player.B] * 25
-    ):  # alternating is arbitrary; the engine imposes no pattern
+    # Alternating is arbitrary; the engine imposes no turn-order pattern.
+    for turn, player in enumerate([Player.A, Player.B] * 25):
         obs = observe(state, player)
         action = agent(obs)
         assert action in legal_actions(obs), f"illegal action on turn {turn}"
@@ -25,31 +38,11 @@ def test_random_agent_only_returns_legal_actions():
 
 
 def test_same_seed_produces_the_same_game():
-    def play(seed: int) -> list[str]:
-        agent = RandomAgent(random.Random(seed))
-        state = initial_state(n=2)
-        actions = []
-        for player in [Player.A, Player.B] * 20:
-            action = agent(observe(state, player))
-            actions.append(str(action))
-            state = step(state, player, action)
-        return actions
-
-    assert play(42) == play(42)
+    assert _play(42) == _play(42)
 
 
 def test_different_seeds_diverge():
-    def play(seed: int) -> list[str]:
-        agent = RandomAgent(random.Random(seed))
-        state = initial_state(n=2)
-        actions = []
-        for player in [Player.A, Player.B] * 20:
-            action = agent(observe(state, player))
-            actions.append(str(action))
-            state = step(state, player, action)
-        return actions
-
-    assert play(1) != play(2)
+    assert _play(1) != _play(2)
 
 
 def test_skip_agent_always_skips():
@@ -58,18 +51,38 @@ def test_skip_agent_always_skips():
     assert agent(observe(state, Player.A)).kind is ActionKind.SKIP
 
 
-def test_agent_receives_only_its_own_observation():
-    """An agent cannot reach the opponent's poles: they are not in the type."""
-    captured = {}
+def test_a_plain_function_satisfies_the_agent_protocol():
+    """No inheritance required — any callable of the right shape works.
 
-    def spy(observation):
-        captured["poles"] = set(observation.poles)
+    This is what "the engine must serve an external agent unchanged" means in
+    practice: a policy written elsewhere plugs in without subclassing
+    anything from this package.
+    """
+
+    def always_skip(observation) -> Action:
         return Action.skip()
 
-    state = initial_state(n=2)
-    spy(observe(state, Player.A))
+    state, outcome = run_random(n=2, max_turns=20, agent=always_skip)
+    assert state.turn == 20
+    assert outcome is Outcome.IN_PROGRESS
 
-    from hanoi_crossing.model import Pole
 
-    assert Pole.P1B not in captured["poles"]
-    assert Pole.P3B not in captured["poles"]
+def test_skip_agent_can_drive_a_full_game():
+    state, outcome = run_random(n=2, max_turns=20, agent=SkipAgent())
+    assert state.turn == 20
+    assert outcome is Outcome.IN_PROGRESS
+
+
+def test_agent_sees_only_its_own_poles():
+    """The opponent's poles are absent from the observation type entirely."""
+    seen: dict[str, set[Pole]] = {}
+
+    class Spy:
+        def __call__(self, observation):
+            seen["poles"] = set(observation.poles)
+            return SkipAgent()(observation)
+
+    run_random(n=2, max_turns=1, agent=Spy())
+
+    assert Pole.P1B not in seen["poles"]
+    assert Pole.P3B not in seen["poles"]

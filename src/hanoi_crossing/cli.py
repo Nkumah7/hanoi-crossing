@@ -13,7 +13,7 @@ import random
 import sys
 from pathlib import Path
 
-from hanoi_crossing.agents import RandomAgent
+from hanoi_crossing.agents import Agent, RandomAgent
 from hanoi_crossing.engine import check_outcome, initial_state, observe, step
 from hanoi_crossing.model import Action, ActionKind, GameState, Outcome, Player, Pole
 
@@ -81,9 +81,7 @@ def run_replay(path: Path, require_all_disks: bool = False) -> tuple[GameState, 
     moves = [parse_action(m) for m in data["moves"]]
 
     if len(turn_order) != len(moves):
-        raise ValueError(
-            f"turn_order has {len(turn_order)} entries but moves has {len(moves)}"
-        )
+        raise ValueError(f"turn_order has {len(turn_order)} entries but moves has {len(moves)}")
 
     state = initial_state(data["n"])
     outcome = check_outcome(state, require_all_disks)
@@ -102,8 +100,13 @@ def run_random(
     seed: int | None = None,
     max_turns: int = DEFAULT_MAX_TURNS,
     require_all_disks: bool = False,
+    agent: Agent | None = None,
 ) -> tuple[GameState, Outcome]:
-    """Play a game with both sides choosing uniformly at random.
+    """Play a game, defaulting to both sides choosing uniformly at random.
+
+    `agent` accepts any callable satisfying the `Agent` protocol, so an
+    external policy can drive the engine without modifying it. Defaults to a
+    `RandomAgent` seeded from `seed`.
 
     Turn order alternates here only because the frontend has to pick
     something; the engine imposes no pattern.
@@ -114,7 +117,8 @@ def run_random(
     truncation any RL environment applies.
     """
     rng = random.Random(seed)
-    agent = RandomAgent(rng)
+    if agent is None:
+        agent = RandomAgent(rng)
 
     state = initial_state(n)
     outcome = check_outcome(state, require_all_disks)
@@ -151,9 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "replay":
         state, outcome = run_replay(args.path, args.require_all_disks)
     else:
-        state, outcome = run_random(
-            args.n, args.seed, args.max_turns, args.require_all_disks
-        )
+        state, outcome = run_random(args.n, args.seed, args.max_turns, args.require_all_disks)
 
     print(render(state, outcome))
     return 0

@@ -86,9 +86,7 @@ def legal_actions(observation: Observation) -> tuple[Action, ...]:
     visible = VISIBLE_POLES[observation.player]
 
     if observation.hand is None:
-        actions.extend(
-            Action.lift(pole) for pole in visible if observation.poles[pole]
-        )
+        actions.extend(Action.lift(pole) for pole in visible if observation.poles[pole])
     else:
         actions.extend(
             Action.place(pole)

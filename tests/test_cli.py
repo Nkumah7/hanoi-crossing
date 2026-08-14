@@ -62,21 +62,9 @@ def test_replay_stops_once_the_game_is_decided(tmp_path):
 
 def test_replay_rejects_mismatched_lengths(tmp_path):
     game = tmp_path / "game.json"
-    game.write_text(
-        json.dumps({"n": 1, "turn_order": ["A", "B"], "moves": ["lift 1a"]})
-    )
+    game.write_text(json.dumps({"n": 1, "turn_order": ["A", "B"], "moves": ["lift 1a"]}))
     with pytest.raises(ValueError):
         run_replay(game)
-
-
-def test_random_play_terminates_within_the_turn_limit():
-    _, outcome = run_random(n=2, seed=1, max_turns=200)
-    assert outcome in {
-        Outcome.A_WINS,
-        Outcome.B_WINS,
-        Outcome.DRAW,
-        Outcome.IN_PROGRESS,
-    }
 
 
 def test_random_play_respects_max_turns():

@@ -9,12 +9,42 @@ such an external agent would use.
 
 ---
 
-## Running it
+## Getting started
+
+**Requires** Python 3.11 or later (the code uses `enum.StrEnum`) and
+[uv](https://docs.astral.sh/uv/).
+
+Install uv, if you don't have it:
 
 ```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh     # macOS / Linux
+```
+
+```powershell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
+```
+
+Clone and set up:
+
+```bash
+git clone https://github.com/Nkumah7/hanoi-crossing.git
+cd hanoi-crossing
 uv sync
+```
+
+`uv sync` creates the virtual environment, installs dependencies from
+`uv.lock`, and installs the package itself. No manual `venv` step is needed —
+`uv run` uses the project environment automatically.
+
+Run the tests:
+
+```bash
 uv run pytest
 ```
+
+---
+
+## Running it
 
 **Replay a recorded game:**
 
@@ -98,6 +128,14 @@ Implemented with frozen dataclasses and tuples. One honest gap: `frozen=True`
 prevents rebinding `state.poles`, not mutating the dict it points at. Engine
 code never mutates, and `with_poles` provides the correct path, but a
 `MappingProxyType` would enforce rather than rely on discipline.
+
+### Agents plug in without touching the engine
+
+`run_random` accepts any callable satisfying the `Agent` protocol, defaulting
+to a seeded `RandomAgent`. Because `Agent` is a `typing.Protocol` rather than a
+base class, an external policy needs no inheritance and no import from this
+package — a plain function is enough, which
+`test_a_plain_function_satisfies_the_agent_protocol` demonstrates.
 
 ### A separate observation type
 
@@ -289,7 +327,7 @@ and any game is reproducible from its seed.
 
 ## Testing
 
-45 tests. The engine is exercised directly rather than through the frontends.
+46 tests. The engine is exercised directly rather than through the frontends.
 
 **Engine and rules**
 
@@ -308,7 +346,9 @@ and any game is reproducible from its seed.
 
 - Only legal actions are ever returned, over a full game
 - Reproducible from a seed; different seeds diverge
-- An agent receives only its own observation
+- A plain function satisfies the `Agent` protocol and can drive a game with no
+  inheritance and no changes to the engine
+- An agent sees only its own poles, verified through the real frontend
 
 **Frontends**
 
@@ -349,8 +389,13 @@ testing or reviewing rather than by reading:
   hostage clears the shared pole, which can hand the victim the win
   (Decision 5).
 - Two speculative helpers (`Player.opponent`, `GameState.with_poles`) that
-  nothing called, and an outdated enum idiom that ruff flagged. All removed on
-  a review pass.
+  nothing called, and an outdated enum idiom that ruff flagged. Removed on a
+  review pass.
+- A test asserting the outcome was one of all four enum members — vacuous, it
+  could not fail. Deleted. Another that claimed to check what an agent sees
+  but never involved an agent; rewritten to go through the frontend.
+- `run_random` hardcoded its agent, leaving the `Agent` protocol enforced by
+  nothing. Now injectable, so the protocol is load-bearing.
 
 Decision 3 and Decision 5 record the corrections rather than tidying them
 away, because they are the clearest evidence the tests are doing real work
@@ -369,3 +414,7 @@ spec.
   stack
 - A greedy or search-based agent, to check the `Agent` protocol holds for a
   policy that needs history
+- Stricter parsing in `parse_action`: a malformed move currently raises
+  `IndexError` rather than a readable error, and trailing tokens are ignored
+- Report unplayed trailing moves in a replay rather than silently dropping
+  them

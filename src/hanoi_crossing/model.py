@@ -108,7 +108,7 @@ class GameState:
         """Return the topmost disk on `pole`, or None if it is empty."""
         stack = self.poles[pole]
         return stack[-1] if stack else None
-    
+
 
 @dataclass(frozen=True, slots=True)
 class Observation:

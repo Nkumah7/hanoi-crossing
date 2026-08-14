@@ -257,6 +257,35 @@ generator makes agent tests deterministic.
 Global random state is a shared mutable dependency, which contradicts every
 other choice above.
 
+### Why `run_random` takes an injectable agent
+
+The first version hardcoded `RandomAgent` inside the function. It worked, and
+it left three things unfinished at once.
+
+The `Agent` protocol was annotated nowhere, so it documented a contract that
+nothing enforced. `SkipAgent` could not be driven through the frontend, so the
+second implementation was never exercised end to end. And the brief's central
+requirement — that an external policy consume the engine unchanged — was
+asserted in prose rather than demonstrated.
+
+One optional parameter fixes all three:
+
+```python
+def run_random(..., agent: Agent | None = None) -> tuple[GameState, Outcome]:
+    if agent is None:
+        agent = RandomAgent(rng)
+```
+
+`test_a_plain_function_satisfies_the_agent_protocol` now passes a bare
+function — no class, no inheritance, no import beyond the types it already
+needs — and it plays a full game. That test is the evidence for the reuse
+claim; without it the claim rests on the reader believing the architecture
+description.
+
+**Alternative considered.** Leaving it hardcoded and relying on the Protocol
+as documentation. Rejected because an interface nothing consumes is an
+interface nothing has tested.
+
 ### Why legality has a single definition
 
 `is_legal` is defined as membership in `legal_actions`, rather than as its own
@@ -308,3 +337,69 @@ a cost to be optimised away.
 
 Both numbers are stated in the README so the reading is visible rather than
 assumed.
+
+
+---
+
+## The review pass
+
+A final pass over the code, reading it as a reviewer rather than as its
+author. Five findings, in descending order of significance.
+
+### `run_random` hardcoded its agent
+
+Covered above. The largest of the five, because it left the project's central
+architectural claim undemonstrated.
+
+### A test that could not fail
+
+```python
+def test_random_play_terminates_within_the_turn_limit():
+    _, outcome = run_random(n=2, seed=1, max_turns=200)
+    assert outcome in {A_WINS, B_WINS, DRAW, IN_PROGRESS}
+```
+
+The assertion lists every member of the enum, so it passes regardless of
+behaviour. The name also claims termination while `IN_PROGRESS` means the
+opposite.
+
+Deleted — `test_random_play_respects_max_turns` already asserts the real
+property, that `state.turn` does not exceed the limit.
+
+### A test that did not test what its name claimed
+
+`test_agent_receives_only_its_own_observation` defined a local `spy` function,
+called it directly with an observation, and asserted on the observation. No
+agent was involved and nothing exercised the agent boundary — it duplicated
+`test_observation_excludes_opponent_poles` with extra indirection.
+
+Rewritten to drive a spy agent through `run_random`, so the assertion is about
+what an agent actually receives in play.
+
+### Two speculative helpers
+
+`Player.opponent` and `GameState.with_poles`, both written because they seemed
+generally useful, neither called by anything. A grep confirmed it; both were
+deleted and the tests stayed green, which is what proves they were unused
+rather than untested.
+
+Unused code on a core type in a 325-line engine is a real cost: a reviewer
+reads everything, and an unused method invites a question whose honest answer
+is "it seemed useful".
+
+### An outdated enum idiom
+
+`class Player(str, Enum)` rather than `class Player(StrEnum)`. Ruff's `UP042`
+caught it. Functionally similar, but the mixin gives
+`str(Player.A) == "Player.A"` — the repr rather than the value — which is a
+known source of formatting bugs.
+
+### What the pattern says
+
+Four of the five were code that looked reasonable and did nothing, or tests
+that looked thorough and asserted nothing. None would have been caught by the
+test suite, because a test that cannot fail passes, and dead code does not
+break anything.
+
+That is the specific failure mode of AI-drafted code, and it is why the review
+was a separate deliberate pass rather than something folded into writing.

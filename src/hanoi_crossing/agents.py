@@ -37,7 +37,11 @@ class RandomAgent:
 
 
 class SkipAgent:
-    """Always skips. Useful for exercising the hostage scenario in tests."""
+    """An agent that always skips.
 
-    def __call__(self, observation: Observation) -> Action:
+    A second implementation of the `Agent` protocol, confirming the interface
+    is not shaped around `RandomAgent` alone.
+    """
+
+    def __call__(self, _observation: Observation) -> Action:
         return Action.skip()

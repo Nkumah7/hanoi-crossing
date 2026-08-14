@@ -5,6 +5,8 @@ Because state is immutable, each test constructs exactly the position it needs
 — there is no setup, teardown, or ordering dependency between tests.
 """
 
+import pytest
+
 from hanoi_crossing.engine import (
     check_outcome,
     initial_state,
@@ -84,8 +86,6 @@ def test_initial_state_other_poles_empty_and_hands_free():
 
 
 def test_initial_state_rejects_zero_disks():
-    import pytest
-
     with pytest.raises(ValueError):
         initial_state(n=0)
 
