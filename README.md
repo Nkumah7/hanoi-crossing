@@ -27,7 +27,7 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"   # Windows
 Clone and set up:
 
 ```bash
-git clone <repository-url> hanoi-crossing
+git clone https://github.com/Nkumah7/hanoi-crossing.git
 cd hanoi-crossing
 uv sync
 ```
