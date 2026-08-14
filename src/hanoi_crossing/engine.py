@@ -177,8 +177,8 @@ def check_outcome(state: GameState, require_all_disks: bool = False) -> Outcome:
     b_won = has_won(state, Player.B, require_all_disks)
 
     if a_won and b_won:
-        # Believed unreachable: the action that clears the shared pole leaves
-        # the actor holding a disk. Guarded rather than left undefined.
+        # Reachable: one player finishes and waits while the other completes
+        # their own tower. Neither is penalised for having finished first.
         return Outcome.DRAW
     if a_won:
         return Outcome.A_WINS

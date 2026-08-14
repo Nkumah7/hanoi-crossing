@@ -87,13 +87,31 @@ Checking only the acting player would miss this.
 
 ---
 
-## Decision 3 — simultaneous win is a draw
+## Decision 3 — a simultaneous win is a draw
 
-Both conditions can become true on the same action (e.g. B clears pole 2 while
-both players are otherwise ready).
+**First reading (rejected).** That both conditions could become true on one
+action, needing a tie-break in favour of the acting player.
 
-**Decision.** Declare a draw. Awarding it to the acting player is arbitrary; a
-draw states the situation honestly.
+**Second reading (also wrong).** That simultaneous wins were unreachable, on
+the grounds that the action clearing the shared pole leaves the actor holding
+a disk — so `DRAW` was only a defensive guard against undefined behaviour.
+
+**What actually happened.** Writing the tests falsified that. A position with
+`3a = (1,)` and `3b = (4, 3, 2)`, both hands empty and all other poles clear,
+satisfies *both* win conditions. It is straightforwardly reachable: B finishes
+and waits, blocked by nothing; A then places their final disk. Both conditions
+hold, and neither player is holding anything.
+
+The earlier reasoning only covered how the shared pole gets cleared. It missed
+that a player can complete their own condition while the opponent has already
+completed theirs.
+
+**Decision.** A simultaneous win is a genuine `DRAW`, not a guard. Awarding it
+to the acting player would penalise the opponent for having finished first and
+waited — which the rules never ask them to avoid.
+
+**Worth recording** that this was found by a test rather than by reading. The
+claim was stated, tested, and disproved.
 
 ---
 
